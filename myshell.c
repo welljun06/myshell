@@ -3,21 +3,29 @@
 #include <string.h>
 #include <readline/readline.h>
 #include <unistd.h>
+#include <pwd.h>
 #include <sys/wait.h>
 
+#define MAX_NAME_LEN 256
+#define MAX_INPUT_LEN 1024
+
+void vsh_info();
+char *get_cwdname(char *cwd);
 char **get_command(char *); // 分割“ ”
 char **get_pipe(char *); // 分割“|”
 char *trim_space(char *); // 去掉前后空格
-void run(char **, int , int );
-int cd(char *path);
+void run(char **, int , int ); // 执行指令函数
+int cd(char *path); // 执行cd功能
+
 int main() {
-    char **command;
+    char **command; 
     char *input;
     pid_t child_pid;
     int stat_loc;
     int pipe_cnt;
 
     while (1) {
+        vsh_info();
         input = readline("shell > ");
         command = get_pipe(input);
         pipe_cnt = 0;
@@ -25,24 +33,26 @@ int main() {
             printf("command: %s\n", command[pipe_cnt]);
             pipe_cnt++;
         }
-        printf("%d\n",pipe_cnt);
-        if (!command[0]) {      // 处理输入为空
-            free(input);
-            free(command);
-            continue;
-        }
-        // 如果输入为cd则不fork
-        if (strcmp(command[0], "cd") == 0) {
-            if (cd(command[1]) < 0) {
-                perror(command[1]);
+        // printf("%d\n",pipe_cnt);
+        if(pipe_cnt == 1) {
+            command = get_command(command[0]);
+            if (!command[0]) {      // 处理输入为空
+                free(input);
+                free(command);
+                continue;
             }
-            /* Skip the fork */
-            continue;
-        }
-        //输入为exit
-        if (strcmp(command[0], "exit") == 0) {
-            printf("exit\n");
-            exit(EXIT_SUCCESS);
+            // 如果输入为cd则不fork
+            if (strcmp(command[0], "cd") == 0) {
+                if (cd(command[1]) < 0) {
+                    perror(command[1]);
+                }
+                continue;
+            }
+            //输入为exit
+            if (strcmp(command[0], "exit") == 0) {
+                printf("exit\n");
+                exit(EXIT_SUCCESS);
+            }
         }
         child_pid = fork();
         if (child_pid < 0) { // 异常
@@ -50,10 +60,6 @@ int main() {
             exit(1);
         }
         if (child_pid == 0) { // 子进程执行execvp
-            // if (execvp(command[0], command) < 0) {
-            //     perror(command[0]);
-            //     exit(1);
-            // }
             run(command, 0, pipe_cnt - 1);
         } else { // 父进程等待子进程结束
             waitpid(child_pid, &stat_loc, WUNTRACED);
@@ -62,7 +68,6 @@ int main() {
         free(input);
         free(command);
     }
-
     return 0;
 }
 
@@ -117,9 +122,11 @@ int cd(char *path) {
 char *trim_space(char *in) {
     int len = strlen(in);
     int i = 0, j = len - 1;
+    // 去掉前面的空格
     while(in[i] == ' ' && in[i] != '\'') {
         i++;
     }
+    // 去掉后面的空格
     while(in[j] == ' ' && in[j] != '\'') {
         in[j--] = 0;
     }
@@ -131,13 +138,15 @@ void run(char **command, int cur, int last) {
         exit(0);
     }
     char **args = get_command(command[cur]);
-
+    // 如果只有一个指令
     if(cur == last) {
         execvp(args[0], args);
     }
     int fd[2], status;
     pid_t pid;
     pipe(fd);
+    printf("args[0]: %s\n", args[0]);
+    // 子进程
     if( (pid = fork()) == 0 ) {
         dup2(fd[1], fileno(stdout));
         close(fd[0]);
@@ -152,4 +161,28 @@ void run(char **command, int cur, int last) {
     close(fd[0]);
     close(fd[1]);
     run(command, cur + 1, last);
+}
+void vsh_info(){
+	struct passwd *pwd = getpwuid(getuid());    //get passwd info of user
+	char hostname[MAX_NAME_LEN] = {0};	   
+	char cwd[MAX_NAME_LEN]; getcwd(cwd, MAX_NAME_LEN);
+	char *cwdname = get_cwdname(cwd);
+	gethostname(hostname, MAX_NAME_LEN);	    //get hostname
+
+	//print the info of user and host
+	printf("[%s@%s ", pwd->pw_name, hostname, cwdname);
+	//print the current directory
+	if (strcmp(pwd->pw_name, cwdname)== 0)printf("%s(~)]", cwdname);
+	else printf("%s]", cwdname);
+	//print the tag of user if it is "root" then print '#';
+	//or, print '$' if it is normal user
+	if (strcmp(pwd->pw_name, "root") == 0)printf("# ");
+	else printf("$ ");
+}
+char *get_cwdname(char *cwd){
+	if (cwd == NULL) return NULL;
+	if (strcmp("/", cwd) == 0) return cwd;
+	char *tmp = &cwd[strlen(cwd)-1];
+	while (*tmp != '/') tmp--;
+	return ++tmp;
 }
