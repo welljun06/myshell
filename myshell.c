@@ -9,8 +9,8 @@
 #define MAX_NAME_LEN 256
 #define MAX_INPUT_LEN 1024
 
-void vsh_info();
-char *get_cwdname(char *cwd);
+void vsh_info(); //获取用户名
+char *get_cwdname(char *cwd); // 获取当前路径
 char **get_command(char *); // 分割“ ”
 char **get_pipe(char *); // 分割“|”
 char *trim_space(char *); // 去掉前后空格
@@ -30,7 +30,7 @@ int main() {
         command = get_pipe(input);
         pipe_cnt = 0;
         while(command[pipe_cnt]) {
-            printf("command: %s\n", command[pipe_cnt]);
+            // printf("command: %s\n", command[pipe_cnt]);
             pipe_cnt++;
         }
         // printf("%d\n",pipe_cnt);
@@ -60,7 +60,12 @@ int main() {
             exit(1);
         }
         if (child_pid == 0) { // 子进程执行execvp
-            run(command, 0, pipe_cnt - 1);
+            if(pipe_cnt == 1){
+                execvp(command[0], command);
+            }
+            else {
+                run(command, 0, pipe_cnt - 1);
+            }
         } else { // 父进程等待子进程结束
             waitpid(child_pid, &stat_loc, WUNTRACED);
         }
@@ -119,6 +124,7 @@ char **get_pipe(char *input) {
 int cd(char *path) {
     return chdir(path);
 }
+
 char *trim_space(char *in) {
     int len = strlen(in);
     int i = 0, j = len - 1;
@@ -145,7 +151,7 @@ void run(char **command, int cur, int last) {
     int fd[2], status;
     pid_t pid;
     pipe(fd);
-    printf("args[0]: %s\n", args[0]);
+    // printf("args[0]: %s\n", args[0]);
     // 子进程
     if( (pid = fork()) == 0 ) {
         dup2(fd[1], fileno(stdout));
@@ -156,28 +162,22 @@ void run(char **command, int cur, int last) {
             exit(-1);
         }
     }
-
     dup2(fd[0], fileno(stdin));
     close(fd[0]);
     close(fd[1]);
     run(command, cur + 1, last);
 }
 void vsh_info(){
-	struct passwd *pwd = getpwuid(getuid());    //get passwd info of user
+	struct passwd *pwd = getpwuid(getuid());   
 	char hostname[MAX_NAME_LEN] = {0};	   
 	char cwd[MAX_NAME_LEN]; getcwd(cwd, MAX_NAME_LEN);
 	char *cwdname = get_cwdname(cwd);
-	gethostname(hostname, MAX_NAME_LEN);	    //get hostname
-
-	//print the info of user and host
+	gethostname(hostname, MAX_NAME_LEN);	  
 	printf("[%s@%s ", pwd->pw_name, hostname, cwdname);
-	//print the current directory
 	if (strcmp(pwd->pw_name, cwdname)== 0)printf("%s(~)]", cwdname);
 	else printf("%s]", cwdname);
-	//print the tag of user if it is "root" then print '#';
-	//or, print '$' if it is normal user
 	if (strcmp(pwd->pw_name, "root") == 0)printf("# ");
-	else printf("$ ");
+	else printf("# ");
 }
 char *get_cwdname(char *cwd){
 	if (cwd == NULL) return NULL;
